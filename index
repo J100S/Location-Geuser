@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Mini GeoGuess</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Leaflet -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+  <style>
+    :root {
+      --bg: #0b0f17;
+      --panel: #111827;
+      --panel-2: #0f172a;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --accent: #60a5fa;
+      --accent-2: #34d399;
+      --danger: #f87171;
+      --warn: #fbbf24;
+    }
+    * { box-sizing: border-box }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif;
+      background: radial-gradient(1000px 600px at 80% -20%, #1f2937 0, #0b0f17 60%, #000 100%);
+      color: var(--text);
+      height: 100vh; overflow: hidden;
+    }
+    .app {
+      display: grid;
+      grid-template-columns: 380px 1fr;
+      gap: 0;
+      height: 100%;
+    }
+    .sidebar {
+      background: linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%);
+      border-right: 1px solid #1f2937;
+      padding: 18px 18px 12px 18px;
+      display: grid;
+      grid-template-rows: auto auto 1fr auto;
+      gap: 14px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 22px;
+      letter-spacing: 0.3px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .badge {
+      font-size: 12px; padding: 2px 8px; border-radius: 999px;
+      background: #0ea5e9; color: white; font-weight: 700;
+    }
+    .stats {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+    }
+    .card {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 16px;
+      padding: 12px;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+    }
+    .card h3 { margin: 0; font-size: 12px; color: var(--muted); font-weight: 600; }
+    .card .big { font-size: 22px; margin-top: 6px; font-weight: 800; letter-spacing: 0.3px; }
+    .clue {
+      display: grid; gap: 8px;
+    }
+    .clue .place {
+      font-weight: 700; font-size: 16px;
+    }
+    .clue .hint {
+      color: var(--muted); line-height: 1.45; font-size: 14px;
+    }
+    .actions {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+      margin-top: 8px;
+    }
+    button {
+      padding: 10px 12px;
+      background: #111827;
+      border: 1px solid #1f2937;
+      color: var(--text);
+      border-radius: 12px;
+      cursor: pointer;
+      font-weight: 700;
+      transition: transform .05s ease, background .2s ease, border-color .2s ease;
+    }
+    button:hover { background: #0b1220; border-color: #334155; }
+    button:active { transform: translateY(1px); }
+    .primary { background: linear-gradient(180deg,#2563eb,#1d4ed8); border: 1px solid #1d4ed8; }
+    .primary:hover { background: linear-gradient(180deg,#1d4ed8,#1e40af); }
+    .ghost { background: transparent; border-color: #253044; }
+    .danger { background: linear-gradient(180deg,#ef4444,#dc2626); border: 1px solid #dc2626; }
+    .map { height: 100%; }
+    .footer {
+      display: flex; justify-content: space-between; align-items: center;
+      color: var(--muted); font-size: 12px;
+    }
+    .toast {
+      position: absolute; left: 50%; top: 18px; transform: translateX(-50%);
+      background: rgba(17,24,39,0.9);
+      border: 1px solid rgba(255,255,255,0.08);
+      color: var(--text); padding: 10px 14px; border-radius: 12px;
+      font-weight: 700; z-index: 5000; backdrop-filter: blur(6px);
+      box-shadow: 0 10px 28px rgba(0,0,0,0.35);
+    }
+    .legend {
+      display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--muted);
+    }
+    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+    .dot.guess { background: var(--warn); }
+    .dot.true { background: var(--accent-2); }
+    .credits { font-size: 11px; color: var(--muted); margin-top: -4px; }
+    .imgwrap {
+      width: 100%; height: 170px; border-radius: 14px; overflow: hidden; background: #0b1220;
+      display: grid; place-items: center; border: 1px solid rgba(255,255,255,0.06);
+    }
+    .imgwrap img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .imgwrap .noimg { color: var(--muted); font-size: 12px; }
+    @media (max-width: 900px) {
+      .app { grid-template-columns: 1fr; grid-template-rows: 360px 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="sidebar">
+      <h1>Mini GeoGuess <span class="badge">No API Key</span></h1>
+
+      <div class="stats">
+        <div class="card">
+          <h3>Round</h3>
+          <div class="big" id="round">1 / 10</div>
+        </div>
+        <div class="card">
+          <h3>Score</h3>
+          <div class="big" id="score">0</div>
+        </div>
+        <div class="card">
+          <h3>Last Distance</h3>
+          <div class="big" id="lastDist">—</div>
+        </div>
+      </div>
+
+      <div class="card clue">
+        <div class="imgwrap" id="imgwrap">
+          <div class="noimg">No image for this round (add one in data!)</div>
+        </div>
+        <div class="place" id="place">Guess the location</div>
+        <div class="hint" id="hint">Read the clue, click on the map to place your guess, then hit “Lock Guess”.</div>
+        <div class="legend">
+          <span class="dot guess"></span> Your Guess
+          <span class="dot true" style="margin-left:12px;"></span> Actual Location
+        </div>
+        <div class="actions">
+          <button id="lock" class="primary" disabled>Lock Guess</button>
+          <button id="next" class="ghost" disabled>Next Round</button>
+        </div>
+        <div class="actions" style="margin-top:0;">
+          <button id="skip" class="ghost">Skip</button>
+          <button id="reset" class="danger">Reset Game</button>
+        </div>
+        <div class="credits" id="credits"></div>
+      </div>
+
+      <div class="footer">
+        <div>Tip: Zoom & pan before you click.</div>
+        <div>© OSM contributors</div>
+      </div>
+    </div>
+
+    <div id="map" class="map"></div>
+  </div>
+
+  <div id="toast" class="toast" style="display:none;"></div>
+
+  <script>
+    // --- Game Data: add your own places! ---
+    // You can add imageURL (Wikimedia, your own static files, etc.) and credit
+    const PLACES = [
+      {
+        name: "Eiffel Tower",
+        country: "France 🇫🇷",
+        clue: "An iron lattice tower built for the 1889 World's Fair.",
+        lat: 48.85837, lng: 2.29448,
+        imageURL: "https://upload.wikimedia.org/wikipedia/commons/a/a8/Tour_Eiffel_Wikimedia_Commons.jpg",
+        credit: "Wikimedia Commons"
+      },
+      {
+        name: "Statue of Liberty",
+        country: "USA 🇺🇸",
+        clue: "A colossal neoclassical sculpture on Liberty Island.",
+        lat: 40.68925, lng: -74.04450,
+        imageURL: "https://upload.wikimedia.org/wikipedia/commons/a/a1/Statue_of_Liberty_7.jpg",
+        credit: "Wikimedia Commons"
+      },
+      {
+        name: "Sydney Opera House",
+        country: "Australia 🇦🇺",
+        clue: "A multi-venue performing arts centre with sail-like shells.",
+        lat: -33.85678, lng: 151.21530,
+        imageURL: "https://upload.wikimedia.org/wikipedia/commons/4/40/Sydney_Opera_House_Sails.jpg",
+        credit: "Wikimedia Commons"
+      },
+      {
+        name: "Christ the Redeemer",
+        country: "Brazil 🇧🇷",
+        clue: "An Art Deco statue atop Corcovado mountain.",
+        lat: -22.95192, lng: -43.21049,
+        imageURL: "https://upload.wikimedia.org/wikipedia/commons/5/5c/Christ_on_Corcovado_mountain.JPG",
+        credit: "Wikimedia Commons"
+      },
+      {
+        name: "Taj Mahal",
+        country: "India 🇮🇳",
+        clue: "A white marble mausoleum on the right bank of the Yamuna.",
+        lat: 27.17514, lng: 78.04214,
+        imageURL: "https://upload.wikimedia.org/wikipedia/commons/d/da/Taj-Mahal.jpg",
+        credit: "Wikimedia Commons"
+      },
+      {
+        name: "Great Pyramid of Giza",
+        country: "Egypt 🇪🇬",
+        clue: "The oldest and largest of the three pyramids in Giza.",
+        lat: 29.97923, lng: 31.13420,
+        imageURL: "https://upload.wikimedia.org/wikipedia/commons/e/e3/Kheops-Pyramid.jpg",
+        credit: "Wikimedia Commons"
+      },
+      {
+        name: "Colosseum",
+        country: "Italy 🇮🇹",
+        clue: "Oval amphitheatre in the centre of Rome.",
+        lat: 41.89021, lng: 12.49223,
+        imageURL: "https://upload.wikimedia.org/wikipedia/commons/d/de/Colosseo_2020.jpg",
+        credit: "Wikimedia Commons"
+      },
+      {
+        name: "Big Ben / Elizabeth Tower",
+        country: "United Kingdom 🇬🇧",
+        clue: "Clock tower at the north end of the Palace of Westminster.",
+        lat: 51.50073, lng: -0.12464,
+        imageURL: "https://upload.wikimedia.org/wikipedia/commons/3/39/Clock_Tower_-_Palace_of_Westminster%2C_London_-_May_2007.jpg",
+        credit: "Wikimedia Commons"
+      },
+      {
+        name: "Burj Khalifa",
+        country: "UAE 🇦🇪",
+        clue: "The tallest building in the world.",
+        lat: 25.19720, lng: 55.27440,
+        imageURL: "https://upload.wikimedia.org/wikipedia/commons/9/93/Burj_Khalifa.jpg",
+        credit: "Wikimedia Commons"
+      },
+      {
+        name: "Machu Picchu",
+        country: "Peru 🇵🇪",
+        clue: "15th-century Inca citadel in the Eastern Cordillera.",
+        lat: -13.16314, lng: -72.54500,
+        imageURL: "https://upload.wikimedia.org/wikipedia/commons/e/eb/Before_Machu_Picchu.jpg",
+        credit: "Wikimedia Commons"
+      },
+      {
+        name: "Angkor Wat",
+        country: "Cambodia 🇰🇭",
+        clue: "The largest religious structure in the world.",
+        lat: 13.41250, lng: 103.86700,
+        imageURL: "https://upload.wikimedia.org/wikipedia/commons/a/a7/Angkor_Wat_temple.jpg",
+        credit: "Wikimedia Commons"
+      },
+      {
+        name: "Golden Gate Bridge",
+        country: "USA 🇺🇸",
+        clue: "Iconic suspension bridge spanning the Golden Gate strait.",
+        lat: 37.81993, lng: -122.47826,
+        imageURL: "https://upload.wikimedia.org/wikipedia/commons/0/0c/GoldenGateBridge-001.jpg",
+        credit: "Wikimedia Commons"
+      },
+      {
+        name: "Petra (Al-Khazneh)",
+        country: "Jordan 🇯🇴",
+        clue: "Rock-cut architecture carved into rose-red sandstone.",
+        lat: 30.32163, lng: 35.44444,
+        imageURL: "https://upload.wikimedia.org/wikipedia/commons/9/9b/Al_Khazneh_Petra_edit_2.jpg",
+        credit: "Wikimedia Commons"
+      },
+      {
+        name: "Uluru / Ayers Rock",
+        country: "Australia 🇦🇺",
+        clue: "Massive sandstone monolith in the Northern Territory.",
+        lat: -25.34443, lng: 131.03688,
+        imageURL: "https://upload.wikimedia.org/wikipedia/commons/6/6e/Uluru_%28Helicopter_view%29-crop.jpg",
+        credit: "Wikimedia Commons"
+      },
+      {
+        name: "CN Tower",
+        country: "Canada 🇨🇦",
+        clue: "Concrete communications and observation tower in Toronto.",
+        lat: 43.64257, lng: -79.38709,
+        imageURL: "https://upload.wikimedia.org/wikipedia/commons/2/2c/CN_Tower_2012.jpg",
+        credit: "Wikimedia Commons"
+      }
+    ];
+
+    const TOTAL_ROUNDS = 10;  // change for longer/shorter games
+
+    // --- Map setup ---
+    const map = L.map('map', {
+      worldCopyJump: true,
+      zoomControl: true,
+      attributionControl: true
+    }).setView([20, 0], 2);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
+
+    // Custom icons (simple colored circles)
+    const GuessIcon = L.divIcon({ className: 'guess-icon', html: '<div style="width:14px;height:14px;border-radius:999px;background:#fbbf24;outline:2px solid rgba(0,0,0,0.25)"></div>', iconSize: [14,14], iconAnchor: [7,7] });
+    const TrueIcon  = L.divIcon({ className: 'true-icon',  html: '<div style="width:14px;height:14px;border-radius:999px;background:#34d399;outline:2px solid rgba(0,0,0,0.25)"></div>', iconSize: [14,14], iconAnchor: [7,7] });
+
+    let currentIndex = -1;
+    let used = [];
+    let round = 0;
+    let score = 0;
+    let lastDistanceKm = null;
+
+    let guessMarker = null;
+    let trueMarker = null;
+    let line = null;
+
+    const elRound = document.getElementById('round');
+    const elScore = document.getElementById('score');
+    const elLast  = document.getElementById('lastDist');
+    const elPlace = document.getElementById('place');
+    const elHint  = document.getElementById('hint');
+    const elLock  = document.getElementById('lock');
+    const elNext  = document.getElementById('next');
+    const elSkip  = document.getElementById('skip');
+    const elReset = document.getElementById('reset');
+    const elToast = document.getElementById('toast');
+    const elImg   = document.getElementById('imgwrap');
+    const elCred  = document.getElementById('credits');
+
+    function rndInt(n) { return Math.floor(Math.random() * n); }
+
+    function pickPlace() {
+      if (used.length === PLACES.length) used = [];
+      let idx;
+      do {
+        idx = rndInt(PLACES.length);
+      } while (used.includes(idx));
+      used.push(idx);
+      return idx;
+    }
+
+    function formatKm(km) {
+      if (km < 1) return `${Math.round(km * 1000)} m`;
+      if (km < 100) return `${km.toFixed(1)} km`;
+      return `${Math.round(km)} km`;
+    }
+
+    function haversine(lat1, lon1, lat2, lon2) {
+      const R = 6371; // km
+      const toRad = d => d * Math.PI / 180;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a = Math.sin(dLat/2)**2 +
+                Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+                Math.sin(dLon/2)**2;
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    }
+
+    // Nonlinear points: 5000 max, decays with distance
+    function pointsForDistance(km) {
+      const p = Math.round(5000 * Math.exp(-km / 2000)); // ~2,000km scale
+      return Math.max(0, Math.min(5000, p));
+    }
+
+    function showToast(msg) {
+      elToast.textContent = msg;
+      elToast.style.display = 'block';
+      clearTimeout(showToast._t);
+      showToast._t = setTimeout(() => elToast.style.display = 'none', 2400);
+    }
+
+    function clearRoundVisuals() {
+      if (guessMarker) { map.removeLayer(guessMarker); guessMarker = null; }
+      if (trueMarker)  { map.removeLayer(trueMarker); trueMarker = null; }
+      if (line)        { map.removeLayer(line); line = null; }
+    }
+
+    function startRound() {
+      round++;
+      if (round > TOTAL_ROUNDS) {
+        endGame();
+        return;
+      }
+      clearRoundVisuals();
+      elRound.textContent = `${round} / ${TOTAL_ROUNDS}`;
+      elLast.textContent = '—';
+      lastDistanceKm = null;
+      elLock.disabled = true;
+      elNext.disabled = true;
+
+      currentIndex = pickPlace();
+      const p = PLACES[currentIndex];
+
+      // Update clue & optional image
+      elPlace.textContent = p.name + (p.country ? ` — ${p.country}` : '');
+      elHint.textContent = p.clue || 'Guess the location!';
+      elCred.textContent = p.credit ? `Photo credit: ${p.credit}` : '';
+
+      if (p.imageURL) {
+        elImg.innerHTML = `<img alt="Clue image for ${p.name}" src="${p.imageURL}"/>`;
+      } else {
+        elImg.innerHTML = `<div class="noimg">No image for this round (add one in data!)</div>`;
+      }
+
+      // Set world view
+      map.setView([20, 0], 2, { animate: true });
+    }
+
+    function endGame() {
+      elPlace.textContent = "Game Over!";
+      elHint.textContent = `Final score: ${score} / ${TOTAL_ROUNDS * 5000}. Press Reset to play again.`;
+      elLock.disabled = true;
+      elNext.disabled = true;
+      showToast(`🎉 Final score: ${score}`);
+    }
+
+    // Map click -> place/update guess marker
+    map.on('click', (e) => {
+      if (elNext.disabled === false) return; // already locked this round
+      const { latlng } = e;
+      if (!guessMarker) {
+        guessMarker = L.marker(latlng, { icon: GuessIcon }).addTo(map);
+      } else {
+        guessMarker.setLatLng(latlng);
+      }
+      elLock.disabled = false;
+    });
+
+    // Lock guess -> compute, show true, draw line, score
+    elLock.addEventListener('click', () => {
+      if (!guessMarker) { showToast('Click on the map to place your guess.'); return; }
+      const p = PLACES[currentIndex];
+      const g = guessMarker.getLatLng();
+      const km = haversine(g.lat, g.lng, p.lat, p.lng);
+      lastDistanceKm = km;
+      const pts = pointsForDistance(km);
+      score += pts;
+
+      // True marker + line
+      trueMarker = L.marker([p.lat, p.lng], { icon: TrueIcon }).addTo(map);
+      line = L.polyline([ [p.lat, p.lng], [g.lat, g.lng] ], {
+        color: '#60a5fa', weight: 3, opacity: 0.8, dashArray: '4 6'
+      }).addTo(map);
+
+      // Fit bounds to both points
+      const bounds = L.latLngBounds([[p.lat, p.lng], [g.lat, g.lng]]).pad(0.25);
+      map.fitBounds(bounds, { animate: true });
+
+      // Update UI
+      elScore.textContent = score;
+      elLast.textContent = formatKm(km);
+      elLock.disabled = true;
+      elNext.disabled = false;
+
+      showToast(`Distance: ${formatKm(km)} • +${pts} pts`);
+    });
+
+    elNext.addEventListener('click', startRound);
+    elSkip.addEventListener('click', () => {
+      showToast('Skipped round.');
+      startRound();
+    });
+    elReset.addEventListener('click', () => {
+      round = 0; score = 0; used = [];
+      elScore.textContent = '0';
+      clearRoundVisuals();
+      startRound();
+    });
+
+    // Start game
+    startRound();
+  </script>
+</body>
+</html>
